@@ -1,0 +1,148 @@
+<?php
+/**
+ * @file
+ *
+ * Provide a form for gift wrap options during checkout
+ */
+ 
+/**
+ * Implement hook_checkout_pane().
+ */
+//function uc_iskouk_checkout_pane() {
+function uc_iskouk_uc_checkout_pane() {
+    $panes[] = array(
+        'id' => 'iskouk',
+        //'callback' => 'uc_iskouk_panes',
+        'callback' => 'uc_checkout_pane_iskouk',
+        'title' => t('ISKO UK '),
+        'desc' => t("User selectable isko options"),
+        'weight' => 2,
+        'process' => TRUE,
+        //'collapsible' => FALSE,
+    );
+    return $panes;
+}
+//function mymodule_checkout_pane_mymodule_billing($op, &$arg1, $arg2) {
+function uc_iskouk_checkout_pane_uc_iskouk_billing($op, &$arg1, $arg2) {
+    $myform = array();
+} 
+function uc_iskouk_tokens(){
+    global $conf;
+    $retval = array();
+    $retval['site_logo']=variable_get('site_logo');
+    $retval['site_login_link']=variable_get('site_login_link');
+    $retval['site_current_date']=format_date(time(), 'medium', 'l j F Y');
+    $retval['site_slogan']=variable_get('site_slogan');
+
+    $mytokens = token_info(); //uc_store_token_info();
+    //print_r($mytokens);
+    $store=$mytokens['tokens']['store'];
+    $site=$mytokens['tokens']['site'];
+    //$stt = array();
+    //$sit = array();
+    $newstore = array();
+    foreach($store as $key => $val){
+        $newstore[$key] = $val['name'];
+    }
+    $stt=  uc_store_tokens("store", $newstore);
+    $newssite = array();
+    foreach($site as $key => $val){
+        $newssite[$key] = $val['name'];
+    }
+    $sit=  uc_store_tokens("site", $newssite);
+    $retval = array_merge($retval, $stt, $sit);
+    foreach($retval as $key => $value){
+        $newkey = str_replace("-", "_", str_replace(":", "_", str_replace(" ", "_", strtolower($key))));
+        if($newkey != $key){
+            $retval[$newkey] = $value;
+            unset($retval[$key]);
+        }
+    }
+    $retval['site_logo']=$retval['logo'];
+    $retval['site_login_link']=$retval['login_url'];
+    return $retval;
+}
+/**
+ * Custom callback function
+ */
+//function uc_iskouk_panes($op, &$arg1, $arg2) {
+//function uc_checkout_pane_quotes($op, &$order, $form = NULL, &$form_state = NULL) {
+//function uc_iskouk_panes($op, &$arg1, $arg2, &$form_state = NULL) {
+function uc_checkout_pane_iskouk($op, &$arg1, $arg2, &$form_state = NULL) {
+    //drupal_set_message(t('look for ISKO  pane.'));
+    switch ($op) {
+        // User is viewing checkout page
+        case 'view':
+            $description = t('Use this area for special instructions or questions regarding your order.');
+            $contents = array();
+            // Build some form array
+            /* * /
+            $contents['iskouk'] = array(
+                '#type' => 'select',
+                '#title' => t('Select Gift Wrap type'),
+                '#options' => array(
+                    'plastic' => t('Plastic Wrap'),
+                    'paper' => t('Paper Wrap'),
+                    'plain' => t('No wrap'),
+                ),
+            );
+            */
+            //Pk 24.08.2012 works but not needed for the moment
+            //$contents['isko_organisation'] = uc_textfield(t('Company'), "", TRUE, NULL, 64);
+            //$contents['isko_contact_fn'] = uc_textfield(t('Contact first name'), "", TRUE, NULL, 64);
+            //$contents['isko_contact_ln'] = uc_textfield(t('Contact last name'), "", TRUE, NULL, 64);
+            
+            //return array('contents' => $contents);
+            return array('description' => $description, 'contents' => $contents);
+         
+      // User click checkout review
+      // Processing user input
+      // Related to hook_checkout_pane() process options
+        case 'process' :
+            // Moving user input which is stored in $arg2 to the order
+            // stored data which is $arg1
+            //$arg1->iskouk_type = $arg2['isko_organisation'];
+            //$arg1->iskouk = $arg2['panes']['iskouk'];
+            //Pk 24.08.2012 works but not needed for the moment
+            //$arg1->data['iskouk'] = $arg2['panes']['iskouk'];
+            //$arg1->billing_company = $arg2['panes']['iskouk']['isko_organisation']['#value'];
+            //$arg1->billing_first_name = $arg2['panes']['iskouk']['isko_contact_fn']['#value'];
+            //$arg1->billing_last_name = $arg2['panes']['iskouk']['isko_contact_ln']['#value'];
+            
+            //Pk 24.08.2012 doesn't work
+            /*
+            $arg2['panes']['billing']['address']['billing_company']['#value'] = $arg2['panes']['iskouk']['isko_organisation']['#value'];
+            $arg2['panes']['billing']['address']['billing_first_name']['#value'] = $arg2['panes']['iskouk']['isko_contact_fn']['#value'];
+            $arg2['panes']['billing']['address']['billing_last_name']['#value'] = $arg2['panes']['iskouk']['isko_contact_ln']['#value'];
+            
+            $form_state['uc_addresses_address']['billing_company'] = $arg2['panes']['iskouk']['isko_organisation']['#value'];
+            $form_state['uc_addresses_address']['billing_first_name'] = $arg2['panes']['iskouk']['isko_contact_fn']['#value'];
+            $form_state['uc_addresses_address']['billing_last_name'] = $arg2['panes']['iskouk']['isko_contact_ln']['#value'];
+			
+            $arg2['panes']['billing']['address']['#value']['billing_company'] = $arg2['panes']['iskouk']['isko_organisation']['#value'];
+            $arg2['panes']['billing']['address']['#value']['billing_first_name'] = $arg2['panes']['iskouk']['isko_contact_fn']['#value'];
+            $arg2['panes']['billing']['address']['#value']['billing_last_name'] = $arg2['panes']['iskouk']['isko_contact_ln']['#value'];
+            */
+            return TRUE;
+ 
+        // User in checkout review page, display their selection   
+        case 'review':
+            // Get user input, Remember the process above?
+            //Pk 24.08.2012 works but not needed for the moment
+            //$iskouk_type = $arg1->data['iskouk']['isko_organisation']['#value'];
+             
+            // Add the formatted output to $review array
+            // so ubercart can process it.
+            // Note this is not clean, I'm just quickly demonstrated
+            // what should be in the output. The proper way to do this
+          // is to create theme with hook_theme and utilize tpl.php
+          // with template_preprocess function.
+            //$review[] = '<div class="giftwrap">' . t('You want @type as org medium', array('@type' => $iskouk_type)) . '</div>';
+            $description = t('Use this area for special instructions or questions regarding your order.');
+            $title = 'iskouk part';
+            $contents = array();
+            return; //array();
+            return array('title' => $title, 'description' => $description, 'contents' => $contents);
+            return $review;
+    }
+}

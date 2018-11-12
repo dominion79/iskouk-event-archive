@@ -1,0 +1,14 @@
+name = ISKO UK 
+description = Tableless, recolorable, multi-column, fixed width theme.
+version = VERSION
+core = 7.x
+base theme = garland
+stylesheets[all][] = iskouk.css
+stylesheets[print][] = print.css
+settings[garland_width] = fluid
+
+; Information added by drupal.org packaging script on 2008-02-13
+;version = "1.0"
+;project = "drupal"
+;datestamp = "1202913006"
+  

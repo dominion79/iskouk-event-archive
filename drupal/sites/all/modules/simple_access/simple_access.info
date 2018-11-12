@@ -1,0 +1,16 @@
+name = Simple Access
+description = Provides simple hide/view access for nodes.
+core = 7.x
+package = Access control
+configure = admin/config/content/simple-access
+files[] = simple_access.module
+files[] = simple_access.install
+files[] = simple_access.admin.inc
+files[] = simple_access.theme.inc
+files[] = views/simple_access_views_plugin_group.inc
+; Information added by drupal.org packaging script on 2013-10-24
+version = "7.x-2.0-rc4"
+core = "7.x"
+project = "simple_access"
+datestamp = "1382615132"
+

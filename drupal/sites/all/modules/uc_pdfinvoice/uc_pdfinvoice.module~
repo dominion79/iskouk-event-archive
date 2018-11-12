@@ -1,0 +1,64 @@
+<?php
+/**
+* Implements hook_mail_alter()
+*/
+function uc_pdfinvoice_mail_alter(&$message) {
+global $user;
+if (strpos($message['id'], 'uc_order_action-mail') !== FALSE) {
+$path = 'sites/all/libraries';
+if(!file_exists("$path/tcpdf/tcpdf.php")){
+//TCPDF is not installed
+watchdog('uc_pdfinvoice', 'TCPDF is not installed at %path. Cannot generate PDF. Notify your administrator.',
+array('%path' => $path . '/tcpdf'));
+return;
+}
+require_once("$path/tcpdf/config/lang/eng.php");
+require_once("$path/tcpdf/tcpdf.php");
+//create a PDF
+$body = $message['body'];
+$invoice = implode("", $body);
+$pdf = new TCPDF();
+//Pk 02.02.2013
+//$pdf->setPageFormat('A4');
+// set document information
+$pdf->SetCreator(PDF_CREATOR);
+$pdf->SetAuthor('System generated');
+$pdf->setPrintHeader(FALSE);
+$pdf->SetAutoPageBreak(TRUE, PDF_MARGIN_BOTTOM);
+//$pdf->AddPage();
+$pdf->AddPage('L', 'A4');
+$pdf->writeHTML($invoice, true, 0, true, 0);
+//write the file
+$fname = drupal_tempnam('temporary://', 'ucpdf_') . '.pdf';
+$file_name = drupal_realpath($fname);
+$fname = str_replace('temporary://', '', $fname);
+$pdf->Output($file_name, 'F');
+//Inserting File data into database to be garbage collected
+$file = new stdClass();
+$file->uid = $user->uid;
+$file->filename = $fname;
+$file->uri = $file_name;
+$file->filemime = file_get_mimetype($file_name);
+$file->filesize = filesize($file_name);
+$file->status = 0;
+$file->timestamp = time();
+$file = file_save($file);
+//send as attachment
+$hash = md5("uc_pdfinvoice");
+$message['headers']["Content-Type"] = "multipart/mixed; charset=utf-8; boundary=\"" . $hash . "\"";
+$message['headers']["X-Mailer"] = 'Drupal EPF (PHP/'.phpversion().')';
+$data = '';
+$data .= "--" . $hash . "\n"
+. 'Content-Type: ' . $file->filemime . ";" . 'name="ISKO PkDev Invoice.pdf"' . "\n"
+. 'Content-Disposition: attachment; filename="ISKO PkDev Invoice.pdf"' . "\n"
+. "Content-Transfer-Encoding: base64\n\n"
+. chunk_split(base64_encode(file_get_contents($file->uri))) . "\n";
+$replace = variable_get('uc_pdfinvoice_overwrite_body', 0);
+$message['body'] = array();
+$body_text = variable_get('uc_pdfinvoice_overwrite_bodytxt', 'Thank you for your order. The details are enclosed.');
+$message['body'][] = "--" . $hash . "\n" .
+"Content-Type: text/plain; charset=utf-8\n" .
+$body_text;
+$message['body'][] = $data . "--" . $hash . "--";
+}
+}

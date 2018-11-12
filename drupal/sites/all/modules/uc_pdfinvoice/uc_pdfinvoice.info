@@ -1,0 +1,6 @@
+name = Ubercart PDF Invoices
+description = Send order invoices as PDF attachment
+dependencies[] = uc_order
+package = Ubercart - extra
+core = 7.x
+

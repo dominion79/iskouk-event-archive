@@ -1,0 +1,269 @@
+<?php
+/**
+ * @file
+ * Integration module for ubercart and signup
+ */
+
+/**
+ * Insert our own validation function into the signup form
+ */
+function uc_signup_form_signup_form_alter(&$form, &$form_state, $form_id) {
+  $node = $form_state['build_info']['args'][0];
+  /*
+         $node_ar = get_object_vars($node);
+         $node_ar_keys = array_keys($node_ar);
+         foreach($node_ar_keys as $key){
+             if(strpos($key, "signup") !== false){
+                 $signup[$key] = $node->$key;
+                 $newkey = str_replace("signup_", "", $key);
+                 $signup[$newkey] = $node->$key;
+             }
+         }
+         $node_ar_skeys = array_keys($node_ar_keys, "signup");
+         //$signup = array_intersect_key($node_ar, array_keys($node_ar, 'signup'));
+         if(!count($signup)){
+             //$signup = $node_ar;
+         }
+   */
+  if (!_uc_signup_admin_check($form) && _uc_signup_node_check($node)) {
+    //Pk 30.07.2012 would work, but not used
+    //$myform = drupal_get_form('uc_product_add_to_cart_form', $node, 'auth', TRUE);
+    //$form['attributes'] = $myform['attributes']; 
+    //unset($form['#submit']);
+    array_unshift($form['#submit'], 'uc_signup_form_submit');
+    if($form_id == 'signup_form' && isset($form['collapse']['submit'])){
+      //$form = array();
+        unset($form['collapse']['submit']);
+    }
+    if($form_id == 'signup_form' && isset($form['collapse']['signup_user_form']['signup_form_data']['Phone'])){
+        unset($form['collapse']['signup_user_form']['signup_form_data']['Phone']);
+    }
+    if($form_id == 'signup_form' && isset($form['collapse']['signup_user_form']['signup_form_data']['Name'])){
+        //$form['collapse']['signup_user_form']['signup_form_data']['Name']['#type'] = 'item';
+        $form['collapse']['signup_user_form']['signup_form_data']['Name']['#disabled'] = TRUE;
+    }
+    if($form_id == 'signup_form' && isset($form['collapse']['email']['email_address'])){
+        $form['collapse']['email']['email_address']['#disabled'] = TRUE;
+    }
+  }
+}
+
+/**
+ * Implementaiton of hook_views_api
+ */
+function uc_signup_views_api() {
+  return array(
+    'api' => 2.0,
+    'path' => drupal_get_path('module', 'uc_signup') . '/views',
+  );
+}
+
+/**
+ * Modify the signup workflow if the signup node is a product 
+ */
+function uc_signup_form_submit($form, $form_state) {
+  $node = $form_state['build_info']['args'][0];
+  //Pk 30.07.2012
+  $form_state['redirect'] = uc_cart_add_item($form_state['values']['nid'], 1, array('signup' => $form_state['values']));
+  drupal_set_message(t('You will be signed up to !node after checkout.', array('!node' => l($node->title, 'node/' . $node->nid))));
+  // Bypass the form submission by going directly to the cart
+  //Pk 30.07.2012
+  //drupal_goto($form_state['redirect']);
+  //uc_cart_add_item($form_state['values']['nid'], 1, array('signup' => $form_state['values']));
+  // Pk not yet set $form_state['values']['atctweaks_data']
+  // so hardcoded shortcut to checkout
+  //uc_atctweaks_add_to_cart_post_submit($form, $form_state);
+  //$form_state['redirect'] = 'cart/checkout';
+  drupal_goto($form_state['redirect']);
+}
+
+/**
+ * Pk try hook into cart form
+ */
+function uc_signup_form_alter(&$form, &$form_state, $form_id) {
+    //drupal_set_message(t('You will be changed !node after checkout.'));
+}
+/**
+ * Pk try hook into cart form, works
+ */
+function uc_signup_form_uc_cart_checkout_form_alter(&$form, &$form_state, $form_id) {
+    //drupal_set_message(t('You will be processed after checkout.'));
+}
+
+/**
+ * Pk try hook into cart form doesn't work
+ */
+function uc_signup_uc_cart_checkout_form_alter(&$form, &$form_state, $form_id) {
+    drupal_set_message(t('You will be changed !node after checkout.'));
+}
+/**
+ * Pk try hook into cart form form doesn't work
+ */
+function uc_signup_theme_uc_cart_checkout_form(&$vars) {
+    drupal_set_message(t('You will be changed !node after checkout.'));
+}
+/**
+ * Process the signup once the checkout is complete
+ */
+function uc_signup_uc_checkout_complete($order, $account) {
+  foreach ($order->products as $product) {
+    //Pk 31.07.2012
+    if (_uc_signup_node_check($product->nid)) {
+    //if (_uc_signup_node_check($product->nid) && isset($product->data['signup'])) {
+      $sid = 0;
+      if(isset($product->data['signup'])){
+        $signup = $product->data['signup'];
+      }else{
+         $node = node_load($product->nid);
+         //$signup = $node->signup;
+         $node_ar = get_object_vars($node);
+         $node_ar_keys = array_keys($node_ar);
+         foreach($node_ar_keys as $key){
+             if(strpos($key, "signup") !== false){
+                 $signup[$key] = $node->$key;
+                 $newkey = str_replace("signup_", "", $key);
+                 $signup[$newkey] = $node->$key;
+             }
+         }
+         $signup['nid'] = $product->nid;
+      }
+      //Pk 31.07.2012 use account settings
+      if(isset($account->mail)){
+        $signup['email_address'] = $account->mail;
+        $signup['uid'] = $account->uid;
+        //$sid = signup_sign_up_user($signup);
+      }else{
+        // Change some values in the signup object based on the $account object if it exists
+        if (isset($signup['signup_anon_mail']) && $account->uid > 0 && $signup['signup_anon_mail'] == $account->mail) {
+            unset($signup['signup_anon_mail']);
+            $signup['email_address'] = $account->mail;
+            $signup['uid'] = $account->uid;
+        }
+      }
+      if ($signup['email_address'] == $account->mail) {
+        $sid = signup_sign_up_user($signup);
+      }
+
+      // TODO Check if this else is still pertinent, now that we adjust anonymous signups based on uc account info
+      else {
+        module_load_include('inc', 'signup', 'includes/signup_form');
+        if (!isset($signup['signup_anon_mail'])) {
+          $signup['signup_anon_mail'] = $signup['email_address'];
+          unset($signup['email_address']);
+        }
+        if (signup_validate_anon_email($signup['nid'], $signup['signup_anon_mail'])) {
+          $signup['uid'] = 0;
+          $sid = signup_sign_up_user($signup);
+        }
+      }
+      $record = array(
+        'sid' => $sid,
+        'order_id' => $order->order_id,
+      );
+      drupal_write_record('uc_signup_order', $record);
+      watchdog('uc_signup', t('Saved signup !sid after checkout of order !oid', array('!sid' => l($sid, 'node/' . $product->nid . '/signups'), '!oid' => l($order->order_id, 'admin/store/orders/' . $order->order_id))));
+    }
+  }
+}
+
+/**
+ * Delete order associations when a signup is cancelled
+ */
+function uc_signup_signup_cancel($signup, $node) {
+  if (_uc_signup_node_check($node)) {
+    db_delete('uc_signup_order')->condition('sid', $signup->sid)->execute();
+  }
+}
+
+/**
+ * Pk 31.07.2012
+ * Disable the signup form for products with attributes
+ * but it's not triggereed
+ */
+function uc_signup_signup_form_alter(&$form, $form_state){
+  //signup_form_alter($form, $form_state, $form_id)
+  $node = $form['node']['#value'];
+  if (_uc_signup_node_check($node)) {
+    //unset($form['actions']);
+    //unset($form['qty']);
+      
+  } 
+}
+/**
+ * Disable the add to cart form for products with signups
+ */
+function uc_signup_form_uc_product_add_to_cart_form_alter(&$form, &$form_state) {
+  $node = $form['node']['#value'];
+  //$myNode = node_load($node->nid);
+  //$has_signups = !empty($node) && (bool) db_query_range("SELECT 1 from {signup_log} WHERE nid = :nid", 0, 1, array(':nid' => $node->nid))->fetchField();
+  //$signups = db_query_range("SELECT * from {signup_log} WHERE nid = :nid", 0, 1, array(':nid' => $node->nid))->fetchField();
+  if (_uc_signup_node_check($node)) {
+    //Pk 18.08.2012
+    //drupal_set_message(t('Your signup carries on', array('!node' => l($node->title, 'node/' . $node->nid))));
+    //unset($form['actions']);
+    //unset($form['qty']);
+      //$node->signup_status
+    if(!$node->signup_status){
+      unset($form['actions']);
+      unset($form['attributes']);
+    }
+  }
+}
+function uc_checkout_pane_signup($op, &$arg1, $arg2, &$form_state = NULL) {
+    drupal_set_message(t('Your signup is processed'));
+}
+function uc_checkout_pane_uc_signup($op, &$arg1, $arg2, &$form_state = NULL) {
+    drupal_set_message(t('Your uc_signup is processed'));
+    switch ($op) {
+        // User is viewing checkout page
+        case 'view':
+            $contents['gift_wrap'] = array(
+                '#type' => 'select',
+                '#title' => t('Select Gift Wrap type'),
+                '#options' => array(
+                    'plastic' => t('Plastic Wrap'),
+                    'paper' => t('Paper Wrap'),
+                    'plain' => t('No wrap'),
+                ),
+            );
+            $description = t('Use this area for special instructions or questions regarding your order.');
+            return array('description' => $description, 'contents' => $contents);
+         
+      // User click checkout review
+      // Processing user input
+      // Related to hook_checkout_pane() process options
+        case 'process' :
+            // Moving user input which is stored in $arg2 to the order
+            // stored data which is $arg1
+            $arg1->gift_wrap_type = $arg2['gift_wrap'];
+            return TRUE;
+ 
+        // User in checkout review page, display their selection   
+        case 'review':
+            // Get user input, Remember the process above?
+            $review[] = '<div class="giftwrap">' . t('You want @type as gift wrap medium', array('@type' => $gift_wrap_type)) . '</div>';
+            return $review;
+    }
+}
+/**
+ * Helper function tells us if the node is a uc_signup node
+ *
+ * @param $node
+ *   Either the nid or node object
+ */
+function _uc_signup_node_check($node) {
+  if (is_numeric($node)) {
+    $node = node_load($node);
+  }
+  return (isset($node->signup) && $node->signup && uc_product_is_product($node));
+}
+
+/**
+ * Check if this is the admin add form
+ */
+function _uc_signup_admin_check($form) {
+  $action = explode('/', $form['#action']);
+  $arg_2 = array_pop($action);
+  $arg_1 = array_pop($action);
+  return ($arg_1 == 'signups' && $arg_2 == 'add');
+}

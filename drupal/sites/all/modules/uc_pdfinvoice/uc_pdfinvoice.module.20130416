@@ -1,0 +1,303 @@
+<?php
+/**
+* Implements hook_mail_alter()
+*/
+function uc_pdfinvoice_mail_alter(&$message) {
+  global $user;
+  if (strpos($message['id'], 'uc_order_action-mail') !== FALSE) {
+    $path = 'sites/all/libraries';
+    if(!file_exists("$path/mpdf/mpdf.php")){
+      //TCPDF is not installed
+      watchdog('uc_pdfinvoice', 'MPDF is not installed at %path. Cannot generate PDF. Notify your administrator.',
+      array('%path' => $path . '/mpdf'));
+      return;
+    }
+    //require_once("$path/dompdf/config/lang/eng.php");
+    //require_once("$path/dompdf/dompdf.php");
+    //create a PDF
+    if(isset($message['params']['template']) && ($message['params']['template']=='admin')){
+      return;
+    }
+	if(!isset($message['params']['headers']) || !isset($message['params']['headers']['altbody'])){
+	  return;
+	}
+    //Pk 16.02.2013 works, but we want to pdf altbody, keep themed body
+    //if(true){
+    if(false){
+      $body = $message['body'];
+      $altbody = $message['params']['headers']['altbody'];
+    }  else {
+      $altbody = $message['body'];
+      $body = $message['params']['headers']['altbody'];
+    }
+    $subject = $message['params']['headers']['attaname'];//$message['subject'];
+    $subject = str_replace('\r', '', $subject);
+    $subject = str_replace('PHP_EOL', '', $subject);
+    $subject = substr($subject, 0, 28);
+
+    $invoice = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />';
+    if(is_array($body)){
+      $invoice .= implode("", $body);
+    }else{
+        $invoice .= $body;
+    }
+    $altinvoice = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />';
+    if(is_array($altbody)){
+      $altinvoice .= implode("", $altbody);
+    }else{
+        $altinvoice .= $altbody;
+    }
+    $altbody = $altinvoice;
+    //$pdf = new TCPDF();
+    //$pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+
+    //include("../mpdf.php");
+    require_once("$path/mpdf/mpdf.php");
+    //$mpdf=new mPDF();
+    $mpdf=new mPDF('utf-8', 'A4-L');
+    $mpdf->WriteHTML($invoice);
+    //$mpdf->Output();
+
+    $fnameh = drupal_tempnam('temporary://', 'ucpdf_');
+    file_unmanaged_delete($fnameh);
+    $fname = $fnameh . '.pdf';
+    $fnameh = $fnameh . '.html';
+    $fileh_name = drupal_realpath($fnameh);
+    //$fnameh = str_replace('temporary://', '', $fnameh);
+    //Inserting File data into database to be garbage collected
+    if (!$handle = fopen($fileh_name, "w")) {
+       print "Kann die Datei $fileh_name nicht öffnen";
+    }
+    // Schreibe $invoice in die geöffnete Datei.
+    if (!fwrite($handle, $invoice)) {
+      print "Kann in die Datei $fileh_name nicht schreiben";
+    }
+    //print "Fertig, in Datei $fileh_name wurde $invoice geschrieben";
+    fclose($handle);
+    $fileh = new stdClass();
+    $fileh->uid = $user->uid;
+    $fileh->filename = str_replace('temporary://', '', $fnameh);
+    $fileh->uri = $fnameh;
+    $fileh->filemime = file_get_mimetype($fileh_name);
+    $fileh->filesize = strlen($invoice); //filesize($fileh_name);
+    $fileh->status = 0;
+    $fileh->timestamp = time();
+    //$fileh = file_save_data($invoice, $fileh);
+    $fileh = file_save($fileh);
+
+    //$pdf->writeHTML($invoice, true, 0, true, 0);
+    //write the file
+    //$fname = drupal_tempnam('temporary://', 'ucpdf_') . '.pdf';
+    $file_name = drupal_realpath($fname);
+    //$fname = str_replace('temporary://', '', $fname);
+    //$pdf->Output($file_name, 'F');
+    $mpdf->Output($file_name);
+
+    //10.02.2013
+    module_load_include('inc', 'print', 'print_pdf.pages');
+    //print_pdf_generate_html($print, $html, $pdf_filename);
+    $path='admin/store/orders/316/invoice';
+    $query=''; 
+    $cid=0;
+    $myApi = print_views_api();
+    $myVersion = _print_pdf_wkhtmltopdf_version();
+    $arg='11';
+    $myHelp=print_pdf_help($path, $cid);
+    $print = array(
+        'url' => '',
+        'content' => $invoice,
+        'logo' => '',
+        'footer_message' => '',
+    'head' => '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />',
+        );
+    $mypdf = do_print_pdf_wkhtmltopdf($print, $invoice);
+    //$mypdf2 = do_print_pdf_generate_html($print, $invoice);
+
+
+    //$print = print_controller($path, $query, $cid, PRINT_PDF_FORMAT);
+    //$mypdf = _print_pdf_wkhtmltopdf($print, $invoice);
+    //$mypdf = print_pdf_generate_html($print, $invoice);
+    //$mypdf = print_pdf_generate_html(null, $invoice, 0);
+    if (!$handle = fopen($file_name, "w")) {
+      print "Kann die Datei $file_name nicht öffnen";
+    }
+    // Schreibe $invoice in die geöffnete Datei.
+    if (!fwrite($handle, $mypdf)) {
+      print "Kann in die Datei $file_name nicht schreiben";
+    }
+    //fclose($handle);
+
+    //Inserting File data into database to be garbage collected
+    $file = new stdClass();
+    $file->uid = $user->uid;
+    $file->filename = str_replace('temporary://', '', $fname);;
+    $file->uri = $fname;
+    $file->filemime = file_get_mimetype($file_name);
+    $file->filesize = filesize($file_name);
+    $file->status = 0;
+    $file->timestamp = time();
+    $file = file_save($file);
+    //send as attachment
+    $hash = md5("uc_pdfinvoice");
+    $message['headers']["Content-Type"] = "multipart/related; boundary=\"" . $hash . "\"";
+    //$message['headers']["Content-Type"] = "multipart/alternativ; boundary=\"" . $hash . "\"";
+    //$message['headers']["Content-Transfer-Encoding: "] = "7bit" . PHP_EOL;
+    $message['headers']["X-Mailer"] = 'Drupal EPF (PHP/'.phpversion().')';
+    $message['headers']["MIME-Version"] = "1.0" . PHP_EOL;
+    $data = '';
+    $data .= "--" . $hash . PHP_EOL
+        . 'Content-Type: ' . $file->filemime . ";" . 'name="' . $subject . '.pdf"' . PHP_EOL
+        . 'Content-Disposition: attachment; filename="' . $subject . '.pdf"' . PHP_EOL
+        . "Content-Transfer-Encoding: base64" . PHP_EOL . PHP_EOL
+        //. chunk_split(base64_encode(file_get_contents($file->uri))) . PHP_EOL . PHP_EOL;
+        . chunk_split(base64_encode($mypdf)) . PHP_EOL . PHP_EOL;
+    $replace = variable_get('uc_pdfinvoice_overwrite_body', 0);
+    $message['body'] = array();
+	
+	//Pk 16.04.2013 moved block to have html first
+    $body_text = "Thank you for registering for our event. Details of your order are included in the attached document. "
+        . "This document may also be printed or downloaded if needed, from your Order History page on the <b>ISKO UK site</b>." . "<br>"
+        . "<br>"
+        . "Regards," . "<br>"
+        . "<br>"
+        . "ISKO UK Team" . "<br>";
+    $body_text = variable_get('uc_pdfinvoice_overwrite_bodytxt', $body_text);
+    if(isset($altbody)){
+        $body_text = $altbody;
+    }
+    //$message['body'][] = "This is a multi-part message in MIME format." . PHP_EOL . PHP_EOL
+    $message['body'][] = "--" . $hash . PHP_EOL
+        . "Content-Transfer-Encoding: 8bit" . PHP_EOL
+        . "Content-Type: text/html; charset=utf-8" . PHP_EOL . PHP_EOL
+        . $body_text .PHP_EOL . PHP_EOL;;
+                //  . "--" . $hash . PHP_EOL;
+	//Pk end moved block
+	
+    //$body_text = variable_get('uc_pdfinvoice_overwrite_bodytxt', 'Thank you for your order. The details are enclosed.');
+    $body_text = "Thank you for registering for our event. Details of your order are included in the attached document. "
+        . "This document may also be printed or downloaded if needed, from your Order History page on the ISKO UK site." . PHP_EOL
+        . PHP_EOL
+        . "Regards," . PHP_EOL
+        . PHP_EOL 
+        . "ISKO UK Team" . PHP_EOL;
+    $message['body'][] = "--" . $hash . PHP_EOL
+        . "Content-Transfer-Encoding: 8bit" . PHP_EOL
+        . "Content-Type: text/plain; charset=utf-8" . PHP_EOL . PHP_EOL
+        . $body_text .PHP_EOL . PHP_EOL;;
+    //$message['body'][] = $data . "--" . $hash . PHP_EOL;
+    $message['body'][] = $data . PHP_EOL;
+                //$message['body'][] = "--" . $hash . "--" . PHP_EOL;
+
+  }
+}
+function do_print_pdf_generate_html($print, $html, $filename = NULL) {
+  $print_pdf_pdf_tool = variable_get('print_pdf_pdf_tool', PRINT_PDF_PDF_TOOL_DEFAULT);
+
+  if (basename($print_pdf_pdf_tool) == 'dompdf_config.inc.php') {
+    return _print_pdf_dompdf($print, $html, $filename);
+  }
+  elseif (basename($print_pdf_pdf_tool) == 'tcpdf.php') {
+    return _print_pdf_tcpdf($print, $html, $filename);
+  }
+  elseif (drupal_substr(basename($print_pdf_pdf_tool, '.exe'), 0, 11) == 'wkhtmltopdf') {
+    return _print_pdf_wkhtmltopdf($print, $html, $filename);
+  }
+  elseif ($filename) {
+    return drupal_not_found();
+  }
+  return NULL;
+}
+
+/**
+ * Generate the PDF file using wkhtmltopdf
+ *
+ * @param $print
+ *   array containing the configured data
+ * @param $html
+ *   contents of the post-processed template already with the node data
+ * @param $filename
+ *   name of the PDF file to be generated
+ * @see print_pdf_controller()
+ */
+function do_print_pdf_wkhtmltopdf($print, $html, $filename = NULL) {
+  $print_pdf_pdf_tool = variable_get('print_pdf_pdf_tool', PRINT_PDF_PDF_TOOL_DEFAULT);
+  $print_pdf_paper_size = variable_get('print_pdf_paper_size', PRINT_PDF_PAPER_SIZE_DEFAULT);
+  $print_pdf_page_orientation = variable_get('print_pdf_page_orientation', PRINT_PDF_PAGE_ORIENTATION_DEFAULT);
+  $print_pdf_content_disposition = variable_get('print_pdf_content_disposition', PRINT_PDF_CONTENT_DISPOSITION_DEFAULT);
+  $print_pdf_wkhtmltopdf_options = variable_get('print_pdf_wkhtmltopdf_options', PRINT_PDF_WKHTMLTOPDF_OPTIONS);
+
+  $dpi = 96;
+
+  if (!empty($print_pdf_wkhtmltopdf_options)) {
+    $print_pdf_wkhtmltopdf_options = token_replace($print_pdf_wkhtmltopdf_options, array('node' => $print['node']));
+  }
+
+  $version = _print_pdf_wkhtmltopdf_version();
+
+  // 0.10.0 beta2 identifies itself as 0.9.9
+  if (version_compare($version, '0.9.9', '>=')) {
+    $print_pdf_wkhtmltopdf_options = '--disable-local-file-access ' . $print_pdf_wkhtmltopdf_options;
+  }
+  elseif (version_compare($version, '0.9.6', '>=')) {
+    $print_pdf_wkhtmltopdf_options = '--disallow-local-file-access ' . $print_pdf_wkhtmltopdf_options;
+  }
+  else {
+    drupal_goto($print['url']);
+    exit;
+  }
+
+  $descriptor = array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'a'));
+  $cmd = '"' . realpath($print_pdf_pdf_tool) . "\" --page-size $print_pdf_paper_size --orientation $print_pdf_page_orientation --dpi $dpi $print_pdf_wkhtmltopdf_options - -";
+
+  $process = proc_open($cmd, $descriptor, $pipes, NULL, NULL);
+
+  if (is_resource($process)) {
+    fwrite($pipes[0], $html);
+    fclose($pipes[0]);
+
+    $pdf = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+
+    stream_set_blocking($pipes[2], 0);
+    $error = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+
+    $retval = proc_close($process);
+    if (!empty($error) || ($retval != 0)) {
+      if (empty($error)) {
+        $error = 'No stderr output available.';
+      }
+      watchdog('print_pdf', "wkhtmltopdf (returned $retval): $error");
+    }
+  }
+
+  if (!empty($pdf)) {
+    if ($filename) {
+      if (headers_sent()) {
+        exit("Unable to stream pdf: headers already sent");
+      }
+      header("Cache-Control: private");
+      header("Content-Type: application/pdf");
+
+      $attachment =  ($print_pdf_content_disposition == 2) ?  "attachment" :  "inline";
+
+      header("Content-Disposition: $attachment; filename=\"$filename\"");
+
+      echo $pdf;
+      flush();
+      return TRUE;
+    }
+    else {
+      return $pdf;
+    }
+  }
+  else {
+    drupal_set_message(t('Unable to generate PDF file.'), 'error');
+    drupal_goto($meta['url']);
+    return NULL;
+  }
+}
+/**
+ * Implements hook_rules_action_info().
+ */
+

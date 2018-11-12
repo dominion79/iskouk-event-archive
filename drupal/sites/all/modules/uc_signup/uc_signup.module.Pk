@@ -1,0 +1,132 @@
+<?php
+/**
+ * @file
+ * Integration module for ubercart and signup
+ */
+
+/**
+ * Insert our own validation function into the signup form
+ */
+function uc_signup_form_signup_form_alter(&$form, &$form_state, $form_id) {
+  $node = $form_state['build_info']['args'][0];
+  if (!_uc_signup_admin_check($form) && _uc_signup_node_check($node)) {
+      //Pk 30.07.2012
+    $form['#submit'] = array('uc_signup_form_submit');
+  }
+}
+
+/**
+ * Implementaiton of hook_views_api
+ */
+function uc_signup_views_api() {
+  return array(
+    'api' => 2.0,
+    'path' => drupal_get_path('module', 'uc_signup') . '/views',
+  );
+}
+
+/**
+ * Modify the signup workflow if the signup node is a product 
+ */
+function uc_signup_form_submit($form, $form_state) {
+  $node = $form_state['build_info']['args'][0];
+  $form_state['redirect'] = uc_cart_add_item($form_state['values']['nid'], 1, array('signup' => $form_state['values']));
+  drupal_set_message(t('You will be signed up to !node after checkout.', array('!node' => l($node->title, 'node/' . $node->nid))));
+  // Bypass the form submission by going directly to the cart
+  //Pk 30.07.2012
+  //drupal_goto($form_state['redirect']);
+}
+
+/**
+ * Process the signup once the checkout is complete
+ */
+function uc_signup_uc_checkout_complete($order, $account) {
+  foreach ($order->products as $product) {
+    if (_uc_signup_node_check($product->nid)) {
+      $sid = 0;
+      $signup = $product->data['signup'];
+
+      // Change some values in the signup object based on the $account object if it exists
+      if (isset($signup['signup_anon_mail']) && $account->uid > 0 && $signup['signup_anon_mail'] == $account->mail) {
+        unset($signup['signup_anon_mail']);
+        $signup['email_address'] = $account->mail;
+        $signup['uid'] = $account->uid;
+      }
+
+      if ($signup['email_address'] == $account->mail) {
+        $sid = signup_sign_up_user($signup);
+      }
+
+      // TODO Check if this else is still pertinent, now that we adjust anonymous signups based on uc account info
+      else {
+        module_load_include('inc', 'signup', 'includes/signup_form');
+        if (!isset($signup['signup_anon_mail'])) {
+          $signup['signup_anon_mail'] = $signup['email_address'];
+          unset($signup['email_address']);
+        }
+        if (signup_validate_anon_email($signup['nid'], $signup['signup_anon_mail'])) {
+          $signup['uid'] = 0;
+          $sid = signup_sign_up_user($signup);
+        }
+      }
+      $record = array(
+        'sid' => $sid,
+        'order_id' => $order->order_id,
+      );
+      drupal_write_record('uc_signup_order', $record);
+      watchdog('uc_signup', t('Saved signup !sid after checkout of order !oid', array('!sid' => l($sid, 'node/' . $product->nid . '/signups'), '!oid' => l($order->order_id, 'admin/store/orders/' . $order->order_id))));
+    }
+  }
+}
+
+/**
+ * Delete order associations when a signup is cancelled
+ */
+function uc_signup_signup_cancel($signup, $node) {
+  if (_uc_signup_node_check($node)) {
+    db_delete('uc_signup_order')->condition('sid', $signup->sid)->execute();
+  }
+}
+
+/**
+ * Disable the add to cart form for products with signups
+ */
+function uc_signup_form_uc_product_add_to_cart_form_alter(&$form, &$form_state) {
+  $node = $form['node']['#value'];
+  if (_uc_signup_node_check($node)) {
+      //Pk 30.07.2012
+    //unset($form['actions']);
+    //unset($form['qty']);
+    //array_unshift($form['#submit'], 'uc_signup_form_submit');
+      //uc_product_uc_add_to_cart_data($form_values)
+    $myretval = module_load_include('inc', 'signup', 'includes/signup_form');
+    //$myform = drupal_get_form('signup_form', $node, 'auth', $fieldset);
+    //drupal_build_form("", $form_state)
+    $myform = drupal_get_form('signup_form', $node, 'auth', TRUE);
+    //uc_form_alter(&$form, &$myform, "uc-product-add-to-cart-form-90");
+    $form["collapse"] = $myform["collapse"];
+  }
+}
+
+/**
+ * Helper function tells us if the node is a uc_signup node
+ *
+ * @param $node
+ *   Either the nid or node object
+ */
+function _uc_signup_node_check($node) {
+  if (is_numeric($node)) {
+    $node = node_load($node);
+  }
+  return (isset($node->signup) && $node->signup && uc_product_is_product($node));
+}
+
+/**
+ * Check if this is the admin add form
+ */
+function _uc_signup_admin_check($form) {
+  $action = explode('/', $form['#action']);
+  $arg_2 = array_pop($action);
+  $arg_1 = array_pop($action);
+  return ($arg_1 == 'signups' && $arg_2 == 'add');
+}

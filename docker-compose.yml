@@ -1,0 +1,53 @@
+version: '3'
+services:
+    db:
+        build: ./db
+        image: iskoukdb
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: iskoukdb
+            MYSQL_USER: iskouk_user
+            MYSQL_PASSWORD: iskouk_pass
+        ports:
+            - '3306:3306'
+    drupal:
+        build: ./drupal
+        image: iskoukcms
+        depends_on:
+            - db
+        environment:
+            HUB_DB_ENV_MYSQL_DATABASE: iskoukdb
+            HUB_DB_ENV_MYSQL_USER: iskouk_user
+            HUB_DB_ENV_MYSQL_PASSWORD: iskouk_pass
+            HUB_DB_PORT_3306_TCP_ADDR: db
+            HUB_DB_ENV_MYSQL_PREFIX: dr_
+            HUB_EXT_FILE_URL: 'http://localhost:8181/sites/default/files'
+            PHP_MEMORY_LIMIT: 500M
+            PHP_UPLOAD_MAX_FILE_SIZE: 500M
+            PHP_POST_MAX_SIZE: 500M
+            
+            SIMPLETEST_DB: 'mysql://iskouk_user:iskouk_pass@localhost/iskoukdb'
+        volumes:
+            - './drupal/:/var/www/html/'
+        ports:
+            - '8182:80'
+        healthcheck:
+            test: [CMD, curl, '-f', 'http://localhost']
+            interval: 15s
+            timeout: 30s
+            retries: 1
+    drush:
+        image: drupaldocker/drush
+        depends_on:
+                - drupal
+                - db
+        environment:
+                HUB_DB_ENV_MYSQL_DATABASE: iskoukdb
+                HUB_DB_ENV_MYSQL_USER: iskouk_user
+                HUB_DB_ENV_MYSQL_PASSWORD: iskouk_pass
+                HUB_DB_PORT_3306_TCP_ADDR: db
+        volumes:
+                - ./drupal/:/var/www/html/
+        entrypoint:
+                - drush
+                - '--root=/var/www/html/'

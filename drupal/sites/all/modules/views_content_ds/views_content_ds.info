@@ -1,0 +1,15 @@
+name = Views content DS support
+description = Make views_content views displays available as fields in Display Suite.
+dependencies[] = views_content
+dependencies[] = ds
+dependencies[] = xautoload
+package = Views
+core = 7.x
+files[] = views_content_ds.module
+
+; Information added by drupal.org packaging script on 2012-07-20
+version = "7.x-1.0-alpha1"
+core = "7.x"
+project = "views_content_ds"
+datestamp = "1342805255"
+
